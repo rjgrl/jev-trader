@@ -1,46 +1,32 @@
 "use client";
 
-import type { BlockEvent } from "@/lib/types";
+import type { TraderEvent, Decision } from "@/lib/types";
 import { fmtPct } from "@/lib/format";
 import styles from "./DecisionPanel.module.css";
 
 export interface DecisionPanelProps {
-  latest: BlockEvent | null;
+  latest: TraderEvent | null;
 }
 
 type Chosen = "buy" | "sell" | null;
 
 interface BarRowProps {
   label: string;
-  /** css color for the label text */
   labelColor: string;
-  /** dims the label to .38 when false */
   active: boolean;
-  /** 0..1, fill width as a fraction of the track */
   value: number;
-  /** css background for the fill */
   fill: string;
-  /** right-hand percentage text ("62%" or "-") */
   pct: string;
 }
 
 function BarRow({ label, labelColor, active, value, fill, pct }: BarRowProps) {
   return (
     <div className={styles.row}>
-      <span
-        className={styles.label}
-        style={{ color: labelColor, opacity: active ? 1 : 0.38 }}
-      >
+      <span className={styles.label} style={{ color: labelColor, opacity: active ? 1 : 0.38 }}>
         {label}
       </span>
       <div className={styles.track}>
-        <div
-          className={styles.fill}
-          style={{
-            width: `${Math.max(0, Math.min(1, value)) * 100}%`,
-            background: fill,
-          }}
-        />
+        <div className={styles.fill} style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%`, background: fill }} />
       </div>
       <span className={styles.pct}>{pct}</span>
     </div>
@@ -48,24 +34,22 @@ function BarRow({ label, labelColor, active, value, fill, pct }: BarRowProps) {
 }
 
 export default function DecisionPanel({ latest }: DecisionPanelProps) {
-  const decision = latest?.decision ?? null;
-  const late = decision ? decision.late : true;
-  // "hold" is treated as a non-decision, exactly as the feed does.
-  const chosen: Chosen =
-    decision && !decision.late && decision.action !== "hold"
-      ? decision.action
-      : null;
+  const decisionEvent = latest?.type === "decision" ? latest : null;
+  const decision = decisionEvent?.data.decision ?? null;
+  const snapshot = decisionEvent?.data.snapshot ?? null;
 
   const probs = decision?.probabilities ?? { buy: 0, sell: 0, hold: 0 };
-  const decided = decision !== null && !late && chosen !== null;
+  const chosen: Chosen = decision && decision.action !== "hold" ? decision.action : null;
+
+  const decided = decision !== null && chosen !== null;
   const pctOf = (p: number) => (decided ? fmtPct(p) : "-");
 
-  const headline = chosen ? (chosen === "buy" ? "BUY" : "SELL") : "LATE";
+  const headline = chosen ? (chosen === "buy" ? "BUY" : "SELL") : "HOLD";
   const headlineColor = chosen
     ? chosen === "buy"
       ? "var(--buy-ink)"
       : "var(--sell-ink)"
-    : "var(--late-ink)";
+    : "var(--muted)";
   const headlinePct = chosen ? fmtPct(probs[chosen]) : "";
 
   return (
@@ -73,20 +57,18 @@ export default function DecisionPanel({ latest }: DecisionPanelProps) {
       <section className={styles.section}>
         <div className={styles.sectionLabel}>STANDING ORDER</div>
         <div className={styles.order}>
-          {"> post a bid or an ask on Kuru's MON/USDC book. every block. no abstaining."}
+          {"> market order on XAUUSD via MT5. every tick. no abstaining."}
         </div>
       </section>
 
       <section className={styles.section}>
         <div className={`${styles.sectionLabel} ${styles.sectionLabelGap}`}>
-          WHICH SIDE THIS BLOCK?
+          WHICH SIDE THIS TICK?
         </div>
 
         <div className={styles.headline} style={{ color: headlineColor }}>
           <span className={styles.headlineWord}>{headline}</span>
-          {headlinePct ? (
-            <span className={styles.headlinePct}>{headlinePct}</span>
-          ) : null}
+          {headlinePct ? <span className={styles.headlinePct}>{headlinePct}</span> : null}
         </div>
 
         <BarRow
@@ -106,6 +88,18 @@ export default function DecisionPanel({ latest }: DecisionPanelProps) {
           pct={pctOf(probs.sell)}
         />
       </section>
+
+      {snapshot && (
+        <section className={styles.section}>
+          <div className={styles.sectionLabel}>MARKET</div>
+          <div className={styles.market}>
+            <div>Bid: {snapshot.bid.toFixed(2)}</div>
+            <div>Ask: {snapshot.ask.toFixed(2)}</div>
+            <div>Spread: {snapshot.spreadBps.toFixed(1)} bps</div>
+            <div>Pos: {snapshot.positionSide} {snapshot.positionSize.toFixed(2)}</div>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

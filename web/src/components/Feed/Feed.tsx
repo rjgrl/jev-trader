@@ -1,146 +1,62 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { BlockEvent } from "@/lib/types";
-import { fmtInt, fmtPrice, shortTx, txUrl } from "@/lib/format";
+import type { TraderEvent } from "@/lib/types";
+import { fmtPrice, fmtSigned } from "@/lib/format";
 import styles from "./Feed.module.css";
 
-/** Must match `.row { height }` in Feed.module.css. */
-const ROW_H = 26;
-/** Hard ceiling, so a very tall viewport does not render an absurd list. */
-const MAX_ROWS = 40;
-
-type Kind = "buy" | "sell" | "late";
-
-function kindOf(event: BlockEvent): Kind {
-  const d = event.decision;
-  if (!d || d.late) return "late";
-  if (d.action === "buy") return "buy";
-  if (d.action === "sell") return "sell";
-  return "late";
+function fmtTime(ts: number) {
+  return new Date(ts).toLocaleTimeString();
 }
 
-function fmtSize(size: number): string {
-  return size.toLocaleString("en-US", { maximumFractionDigits: 2 });
+export interface FeedProps {
+  events: TraderEvent[];
 }
 
-const KIND_CLASS: Record<Kind, string> = {
-  buy: styles.kindBuy,
-  sell: styles.kindSell,
-  late: styles.kindLate,
-};
-
-const WORD: Record<Kind, string> = { buy: "BUY", sell: "SELL", late: "LATE" };
-
-/**
- * One row per block. The word is the side the model picked, the detail is the order that went on
- * the book (bid or ask at its price), and when a taker hit one of our orders in that block the
- * detail becomes the fill instead. The tx column is the order's transaction: dim while pending,
- * "rev" if the book moved through the price before it landed.
- */
-export default function Feed({ events }: { events: BlockEvent[] }) {
-  const listRef = useRef<HTMLDivElement | null>(null);
-  // How many whole 26px rows fit in the box the layout gives us. The list
-  // itself clips, so a wrong guess is never a half-drawn row, only a hidden one.
-  const [capacity, setCapacity] = useState(MAX_ROWS);
-
-  useEffect(() => {
-    const el = listRef.current;
-    if (!el) return;
-
-    const measure = () => {
-      const fits = Math.max(1, Math.min(MAX_ROWS, Math.floor(el.clientHeight / ROW_H)));
-      setCapacity((prev) => (prev === fits ? prev : fits));
-    };
-
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const rows = events.slice(-capacity).reverse();
+export default function Feed({ events }: FeedProps) {
+  const items = [...events].reverse().slice(0, 50);
 
   return (
-    <section className={styles.feed}>
-      <div className={styles.label}>FEED</div>
-      <div className={styles.list} ref={listRef}>
-        {rows.length === 0 ? (
-          <div className={styles.empty}>no blocks yet</div>
-        ) : (
-          rows.map((event, i) => {
-            const kind = kindOf(event);
-            const decision = event.decision;
-            const quote = event.quote;
-            const fill = event.fill;
-            const decided = kind !== "late";
-            const kindClass = KIND_CLASS[kind];
-
-            const conf =
-              !decided || !decision
-                ? ""
-                : "conf " +
-                  Math.max(
-                    decision.probabilities.buy,
-                    decision.probabilities.sell,
-                    decision.probabilities.hold,
-                  ).toFixed(2);
-
-            const lat = !decided || !decision ? "" : `${decision.latencyMs}ms`;
-
-            let detail = "";
-            let detailMuted = false;
-            if (fill && fill.size > 0) {
-              detail = `FILL ${fmtSize(fill.size)} @ ${fmtPrice(fill.price)}`;
-            } else if (decided && quote) {
-              const word = quote.side === "buy" ? "bid" : "ask";
-              detail = `${word} ${fmtSize(quote.size)} @ ${fmtPrice(quote.price)}${quote.capped ? " cap" : ""}`;
-              detailMuted = quote.status === "reverted" || quote.status === "lost";
-            } else if (decided) {
-              detail = "no quote";
-              detailMuted = true;
-            }
-
-            const rowClass = [styles.row, kindClass, i === 0 ? styles.newest : "", fill ? styles.filled : ""]
-              .filter(Boolean)
-              .join(" ");
-
-            return (
-              <div key={event.block} className={rowClass}>
-                <span className={`${styles.cell} ${styles.block}`}>{fmtInt(event.block)}</span>
-                <span className={`${styles.cell} ${styles.word}`}>{WORD[kind]}</span>
-                <span className={`${styles.cell} ${styles.conf}`}>{conf}</span>
-                <span className={`${styles.cell} ${styles.lat}`}>{lat}</span>
-                <span
-                  className={`${styles.cell} ${styles.detail}${detailMuted ? ` ${styles.muted}` : ""}`}
-                >
-                  {detail}
-                </span>
-                <span className={`${styles.cell} ${styles.tx}`}>
-                  {fill && !fill.simulated && fill.txHash ? (
-                    <a href={txUrl(fill.txHash)} target="_blank" rel="noreferrer" title="the taker's transaction">
-                      {shortTx(fill.txHash)}
-                    </a>
-                  ) : quote && quote.status === "sim" ? (
-                    <span className={styles.muted}>sim</span>
-                  ) : quote && quote.txHash ? (
-                    <a
-                      className={quote.status === "sent" ? styles.pending : quote.status === "placed" ? undefined : styles.muted}
-                      title={quote.status}
-                      href={txUrl(quote.txHash)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {quote.status === "reverted" ? "rev" : quote.status === "lost" ? "lost" : shortTx(quote.txHash)}
-                    </a>
-                  ) : null}
-                </span>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </section>
+    <div className={styles.feed}>
+      <div className={styles.header}>EVENT FEED</div>
+      {items.length === 0 ? (
+        <div className={styles.empty}>waiting for events…</div>
+      ) : (
+        <div className={styles.list}>
+          {items.map((e, i) => (
+            <div key={i} className={`${styles.item} ${styles[e.type]}`}>
+              <span className={styles.time}>{fmtTime(e.data.timestamp)}</span>
+              <span className={styles.type}>{e.type.toUpperCase()}</span>
+              <span className={styles.detail}>{renderDetail(e)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
+}
+
+function renderDetail(e: TraderEvent): string {
+  const d = e.data;
+  switch (e.type) {
+    case "tick":
+      return `${d.snapshot.symbol} bid=${d.snapshot.bid.toFixed(2)} ask=${d.snapshot.ask.toFixed(2)} spread=${d.snapshot.spreadBps.toFixed(1)}bps pos=${d.snapshot.positionSide} ${d.snapshot.positionSize.toFixed(2)}`;
+    case "decision":
+      return `${d.decision.action.toUpperCase()} buy=${(d.decision.probabilities.buy * 100).toFixed(0)}% sell=${(d.decision.probabilities.sell * 100).toFixed(0)}% lat=${d.decision.latencyMs}ms`;
+    case "order":
+      return `${d.action} ${d.volume} @ ${d.price.toFixed(2)}${d.sl ? ` SL=${d.sl.toFixed(2)}` : ""}${d.tp ? ` TP=${d.tp.toFixed(2)}` : ""} ${d.error ? `ERR: ${d.error}` : d.result?.retcodeStr ?? ""}`;
+    case "fill":
+      return `FILL ${d.type} ${d.volume} @ ${d.price.toFixed(2)} pnl=$${d.profit.toFixed(2)}`;
+    case "position":
+      return `${d.positions.length} position(s)`;
+    case "pnl":
+      return `bal=$${d.balance.toFixed(2)} eq=$${d.equity.toFixed(2)} free=$${d.freeMargin.toFixed(2)} float=$${d.floatingPnL.toFixed(2)} realized=$${d.realizedPnL.toFixed(2)} daily=$${d.dailyPnL.toFixed(2)}`;
+    case "risk":
+      return d.allowed ? "OK" : `BLOCKED: ${d.reason}`;
+    case "error":
+      return `${d.message} (${d.context})`;
+    case "connection":
+      return d.connected ? "CONNECTED" : `DISCONNECTED${d.reason ? `: ${d.reason}` : ""}`;
+    default:
+      return "";
+  }
 }

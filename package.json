@@ -12,12 +12,13 @@
   },
   "dependencies": {
     "@ai-sdk/typesafe-ai": "^3.0.0",
-    "@kuru-labs/kuru-sdk": "^0.0.95",
-    "ai": "^7.0.103",
-    "ethers": "5"
+    "ai": "^7.0.103"
   },
   "scripts": {
     "start": "bun run src/index.ts",
-    "dev": "bun --watch run src/index.ts"
+    "dev": "bun --watch run src/index.ts",
+    "bridge:install": "cd mt5_bridge && python -m pip install -r requirements.txt",
+    "bridge:run": "cd mt5_bridge && python main.py",
+    "bridge:dev": "cd mt5_bridge && uvicorn main:app --reload --host 127.0.0.1 --port 8765"
   }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { BlockEvent, Meta } from "@/lib/types";
+import type { TraderEvent, Meta } from "@/lib/types";
 import { fmtInt, uptime } from "@/lib/format";
 import styles from "./StatsRow.module.css";
 
@@ -12,12 +12,11 @@ export default function StatsRow({
   avgLatencyMs,
   meta,
 }: {
-  latest: BlockEvent | null;
+  latest: TraderEvent | null;
   avgLatencyMs: number;
   meta: Meta | null;
 }) {
   const startedAt = meta?.startedAt ?? null;
-  // Ticks once a second; starts on the client so SSR and hydration agree.
   const [up, setUp] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,18 +30,36 @@ export default function StatsRow({
     return () => clearInterval(id);
   }, [startedAt]);
 
-  const decision = latest?.decision ?? null;
-  const last = decision && !decision.late ? `${decision.latencyMs} ms` : `${DASH} ms`;
-  const avg =
-    Number.isFinite(avgLatencyMs) && avgLatencyMs > 0 ? `${Math.round(avgLatencyMs)}ms` : DASH;
-  const totals = latest?.totals ?? null;
+  const decisionEvent = latest?.type === "decision" ? latest : null;
+  const decision = decisionEvent?.data.decision ?? null;
+  const last = decision ? `${decision.latencyMs} ms` : `${DASH} ms`;
+  const avg = Number.isFinite(avgLatencyMs) && avgLatencyMs > 0 ? `${Math.round(avgLatencyMs)}ms` : DASH;
+
+  const pnlEvent = latest?.type === "pnl" ? latest : null;
+  const pnl = pnlEvent?.data;
+
+  const fillsEvent = Array.from({ length: 100 }, (_, i) => latest).filter((e) => e?.type === "fill");
+  const fills = fillsEvent.length;
 
   return (
     <div className={styles.stats}>
       <span>last {last}</span>
       <span>avg {avg}</span>
-      <span className={styles.nowrap}>{totals ? fmtInt(totals.decisions) : DASH} calls</span>
-      <span className={styles.nowrap}>{totals ? fmtInt(totals.fills) : DASH} fills</span>
+      <span className={styles.nowrap}>{decisionEvent ? "1" : DASH} calls</span>
+      <span className={styles.nowrap}>{fills} fills</span>
+      <span className={styles.spacer} />
+      {pnl && (
+        <>
+          <span>eq $${pnl.equity.toFixed(2)}</span>
+          <span>free $${pnl.freeMargin.toFixed(2)}</span>
+          <span style={{ color: pnl.floatingPnL >= 0 ? "var(--pnl-pos)" : "var(--pnl-neg)" }}>
+            float $${pnl.floatingPnL.toFixed(2)}
+          </span>
+          <span style={{ color: pnl.dailyPnL >= 0 ? "var(--pnl-pos)" : "var(--pnl-neg)" }}>
+            daily $${pnl.dailyPnL.toFixed(2)}
+          </span>
+        </>
+      )}
       <span className={styles.spacer} />
       <span>uptime {up ?? "00:00:00"}</span>
     </div>
